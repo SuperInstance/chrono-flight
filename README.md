@@ -25,10 +25,16 @@ which is what makes them recordable.
 
 ## Status
 
-**Scaffolding.** Design and build brief only; no code yet. Confidence is
-annotated per component in `ARCHITECTURE.md` — the recorder and playback
-core are ordinary, buildable engineering; the speculative extras are
-marked as speculative and are not on the v0 path (see `BUILD-BRIEF.md`).
+**First component built: the engine bridge.** `src/importer/` ingests a
+finished quilt-engine run directory (seam log + both sovereign books)
+into chrono-flight's record form, prints it as an ordered timeline
+with explicit kill/open-excursion gaps, recomputes crossing agreement
+from the two books alone, and can write a recording file — see
+`BRIDGE-REPORT.md` and `examples/quilt_timeline.py`. The live recorder
+and playback deck remain design-only; confidence is annotated per
+component in `ARCHITECTURE.md` — the recorder and playback core are
+ordinary, buildable engineering; the speculative extras are marked as
+speculative and are not on the v0 path (see `BUILD-BRIEF.md`).
 
 One limit is stated up front because everything else depends on it:
 **chrono-flight shows what happened. It does not promise to re-run it.**
@@ -54,7 +60,10 @@ observes also stays honest — it has no reason to grow control features
 - `ARCHITECTURE.md` — recorder, storage/downmixing, playback engine, the
   chrono-shell interface, and the replay limit, with confidence marks.
 - `BUILD-BRIEF.md` — the v0 build and its acceptance criteria.
-- `src/` — planned component layout with one-line stubs.
+- `BRIEF.md` / `BRIDGE-REPORT.md` — the engine-bridge build and its report.
+- `src/` — component layout; `src/importer/` is built, the rest are stubs.
+- `examples/`, `tests/` — the timeline CLI and the suite (with frozen
+  quilt-engine run fixtures under `tests/fixtures/`).
 
 ## Source material
 

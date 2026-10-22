@@ -1,0 +1,20 @@
+{"at": 1792656875.8790305, "deviation": 0.0, "event": "decision", "kind": "hold", "pick": null}
+{"at": 1792656876.182894, "contract": "beam-quilt/seam-handshake@1.2", "cost": 3.0, "ending": "PROJECT", "event": "crossing", "payload_type": "telemetry", "pick": "3bfc676e1f05996d", "profile": {"completeness": 1.0, "confidence_by_aspect": {"content": 1.0, "form": 0.1016}, "judge": "sender-jev", "substance": 0.1016}, "transmission_id": "3bfc676e1f05996d"}
+{"at": 1792656876.1832135, "divergence": 0.3333, "event": "disagreement", "receiver_measurement": {"completeness": 0.6667, "judge": "receiver-jev", "merit": 0.55, "substance": 0.1016}, "sender_profile": {"completeness": 1.0, "confidence_by_aspect": {"content": 1.0, "form": 0.1016}, "judge": "sender-jev", "substance": 0.1016}, "transmission_id": "3bfc676e1f05996d"}
+{"at": 1792656876.1832983, "deviation": 0.05, "event": "decision", "kind": "hold", "pick": "3bfc676e1f05996d"}
+{"at": 1792656876.7944984, "contract": "beam-quilt/seam-handshake@1.2", "cost": 2.0, "ending": "PROJECT", "event": "crossing", "payload_type": "course-proposal", "pick": "f4c6f8edd3959921", "profile": {"completeness": 1.0, "confidence_by_aspect": {"content": 1.0, "form": 0.1445}, "judge": "sender-jev", "substance": 0.1445}, "transmission_id": "f4c6f8edd3959921"}
+{"at": 1792656876.7946742, "deviation": 0.45, "event": "decision", "kind": "hold_watch", "pick": "f4c6f8edd3959921"}
+{"at": 1792656877.098526, "deviation": 0.0, "event": "decision", "kind": "hold", "pick": null}
+{"at": 1792656877.5048583, "contract": "beam-quilt/seam-handshake@1.2", "cost": 2.0, "ending": "PROJECT", "event": "crossing", "payload_type": "course-proposal", "pick": "aa69b1e8fec26394", "profile": {"completeness": 1.0, "confidence_by_aspect": {"content": 1.0, "form": 0.1523}, "judge": "sender-jev", "substance": 0.1523}, "transmission_id": "aa69b1e8fec26394"}
+{"at": 1792656877.5058599, "deviation": 0.47, "event": "decision", "kind": "hold_watch", "pick": "aa69b1e8fec26394"}
+{"at": 1792656878.1170926, "event": "course_adjusted", "pick": "aa69b1e8fec26394"}
+{"at": 1792656878.1172404, "deviation": 0.47, "event": "decision", "kind": "act", "pick": "aa69b1e8fec26394", "response": "accept_best"}
+{"at": 1792656878.168023, "deviation": 0.0, "event": "decision", "kind": "hold", "pick": null}
+{"at": 1792656878.829638, "contract": "beam-quilt/seam-handshake@1.2", "cost": 2.0, "ending": "PROJECT", "event": "crossing", "payload_type": "course-proposal", "pick": "d0f45a4ea99520e6", "profile": {"completeness": 1.0, "confidence_by_aspect": {"content": 1.0, "form": 0.125}, "judge": "sender-jev", "substance": 0.125}, "transmission_id": "d0f45a4ea99520e6"}
+{"at": 1792656878.8302667, "deviation": 0.4, "event": "decision", "kind": "hold_watch", "pick": "d0f45a4ea99520e6"}
+{"at": 1792656879.4433255, "deviation": 0.4, "event": "decision", "kind": "act", "pick": "d0f45a4ea99520e6", "response": "clarify_narrow"}
+{"at": 1792656879.4943683, "deviation": 0.0, "event": "decision", "kind": "hold", "pick": null}
+{"at": 1792656880.1579764, "contract": "beam-quilt/seam-handshake@1.2", "cost": 2.0, "ending": "PROJECT", "event": "crossing", "payload_type": "course-proposal", "pick": "6fb5840a96187cb8", "profile": {"completeness": 1.0, "confidence_by_aspect": {"content": 1.0, "form": 0.1484}, "judge": "sender-jev", "substance": 0.1484}, "transmission_id": "6fb5840a96187cb8"}
+{"at": 1792656880.158614, "deviation": 0.7, "event": "decision", "kind": "hold_watch", "pick": "6fb5840a96187cb8"}
+{"at": 1792656880.7750432, "deviation": 0.7, "event": "decision", "kind": "act", "pick": "6fb5840a96187cb8", "response": "refuse"}
+{"at": 1792656880.8261545, "deviation": 0.0, "event": "decision", "kind": "hold", "pick": null}
