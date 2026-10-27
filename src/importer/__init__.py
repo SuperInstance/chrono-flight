@@ -9,7 +9,14 @@ two sovereign books). See ``quilt_engine`` (the importer),
 Files at rest only — no live tailing, no code path into a live fleet.
 """
 
-from .audit import AuditResult, audit_agreement, ledger_entries, render_audit
+from .audit import (
+    AuditResult,
+    audit_agreement,
+    ledger_entries,
+    render_audit,
+    revision_entries,
+    version_fold,
+)
 from .quilt_engine import REPLAY_LIMIT, ImportResult, import_run, load_run
 from .recording import (
     GAP_OPEN,
@@ -38,5 +45,7 @@ __all__ = [
     "read_recording",
     "render_audit",
     "render_timeline",
+    "revision_entries",
+    "version_fold",
     "write_recording",
 ]

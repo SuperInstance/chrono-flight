@@ -61,6 +61,8 @@ def main() -> int:
             ledger_entries(result.run.receiver_book.lines),
             sender_name=result.run.sender_book.owner,
             receiver_name=result.run.receiver_book.owner,
+            sender_revisions=result.run.sender_book.lines,
+            receiver_revisions=result.run.receiver_book.lines,
         )
     print(render_timeline(result, audit=audit, all_events=args.all))
     if args.record:

@@ -21,6 +21,28 @@ tailing — this module reads files, nothing else):
   here rather than smoothed over), and free-form ``event`` entries
   (session_end, refusal_received, sender_hanging, ...).
 
+Engine v0.3 (DESIGN-V03, contract versioning) adds record kinds this
+importer carries without loss:
+
+- ``revision`` records in the books — the ex-ante half of the ledger:
+  a book's position on a contract version (``proposed`` / ``adopted``
+  / ``refused`` / ``withdrawn`` / ``revoked``), with the version a
+  sha256 content hash, the ``supersedes`` chain link, and the
+  statement bytes. Mapped one-for-one as events, intent
+  ``revision:<position>``, tick ``proposed_at`` (wall clock — revision
+  records carry no ``at`` of their own).
+- **Version citations** on every booking: ledger entries carry
+  ``contract_id`` + ``contract_version`` (the version *this side*
+  applied; v0.2's SETTLE / RECEIVE-DISPUTED sides ride too), and seam
+  ``crossing`` events carry ``cited_version`` → ``applied_version``.
+  All of it rides in ``detail`` verbatim and is summarised in the
+  header's ``versioning`` block.
+- **Skew markings**: a RECEIVE honoured under a superseded citation
+  carries ``detail.superseded_citation``, a refused one carries
+  ``detail.citation_refusal``; the seam log says the same as
+  ``superseded_citation`` / ``version_divergence`` events. All three
+  are first-class intents here, and counted in the header summary.
+
 Mapping into chrono-flight's record form (see ``recording.py``): every
 source line becomes exactly one event on a track — the seam log on the
 ``seam`` track, each book on its owner's track — with the event's own
@@ -30,6 +52,11 @@ disagreements, cost for crossings and bookings; ``None`` otherwise —
 no numbers are invented), and the full source line kept in ``detail``.
 Nothing is dropped, edited, or reordered; unknown event kinds are
 recorded under a ``seam:``/``book:`` intent rather than rejected.
+Fields a source record carries that the record form's first-class
+slots (tick / track / intent / value — the chrono-tensor form) cannot
+hold are **named**, per record kind, in the header's
+``versioning.detail_only_fields`` inventory — kept verbatim in
+``detail``, never silently dropped.
 
 Kills and gaps are marked explicitly, never silently closed: a book
 with no ``session_end`` is a truncation gap on that side's track, and
@@ -43,10 +70,13 @@ replay the record of what happened — the receiver's comparative
 judgments (Hold / HoldWatch / Act) are shown as recorded, not
 re-derived, and chrono-flight does not re-simulate judgment calls.**
 
-The engine's own version is not written into the run directory (the
-only version-ish signal in the files is the seam contract id, e.g.
-``beam-quilt/seam-handshake@1.2``); callers stamp the engine commit in
-the recording header's ``source`` block from what they know.
+The engine's own version is not written into the run directory. v0.1
+runs left only the flat seam contract id (e.g.
+``beam-quilt/seam-handshake@1.2``) as a version-ish signal; v0.3 runs
+carry real citations (``contract_id`` + content-hash versions), which
+the header's ``versioning.seam_citations`` block summarises. Which
+engine *wrote* the files is still caller knowledge: callers stamp the
+engine commit in the recording header's ``source`` block.
 """
 
 from __future__ import annotations
@@ -205,6 +235,13 @@ def _seam_event(
     elif ev in ("course_adjusted", "unreadable_envelope"):
         intent = str(ev)
         value = None
+    elif ev in ("revision_received", "superseded_citation", "version_divergence"):
+        # v0.3's own seam events: a revision proposal crossing the seam,
+        # a crossing honoured under a superseded citation, a citation the
+        # receiver refused. No natural magnitude; the citation pair and
+        # versions ride in detail.
+        intent = str(ev)
+        value = None
     else:
         # Unknown seam event: record it, never drop it. Forward
         # compatibility beats rejection for a recorder.
@@ -222,6 +259,54 @@ def _seam_event(
     )
 
 
+# Ledger sides a booking may take. v0.1 had SEND/RECEIVE; v0.2's
+# payload path adds SETTLE and RECEIVE-DISPUTED. Only SEND/RECEIVE
+# pair into crossings in the audit; the other two ride in the books.
+LEDGER_SIDES = ("SEND", "RECEIVE", "SETTLE", "RECEIVE-DISPUTED")
+
+# Fields of each source record that the record form's first-class
+# slots hold (tick / intent / value — the chrono-tensor form; the
+# track is the book's owner, not a source field). Every other field on
+# the line rides in ``detail`` verbatim and is named, per record kind,
+# in the header's ``versioning.detail_only_fields`` inventory.
+_TENSOR_FIELDS: dict[str, set[str]] = {
+    "seam/crossing": {"event", "at", "cost"},
+    "seam/decision": {"event", "at", "kind", "response", "deviation"},
+    "seam/disagreement": {"event", "at", "divergence"},
+    "seam/revision_received": {"event", "at"},
+    "seam/superseded_citation": {"event", "at"},
+    "seam/version_divergence": {"event", "at"},
+    "ledger": {"kind", "side", "at", "cost"},
+    "revision": {"kind", "position", "proposed_at"},
+    "reading": {"kind", "taken_at"},
+    "event": {"kind", "event", "at"},
+}
+
+
+# The book record kinds (a seam `decision` line also carries a "kind" —
+# its decision kind — so the book kinds are what disambiguates).
+_BOOK_KINDS = ("ledger", "reading", "revision", "event")
+
+
+def _tensor_key(d: dict[str, Any]) -> str:
+    """Which inventory row a source line's consumed fields belong to:
+    ``seam/<event>`` for seam-log lines, the ``kind`` for book lines."""
+    if d.get("kind") in _BOOK_KINDS:
+        return str(d["kind"])
+    if "event" in d:
+        return f"seam/{d['event']}"
+    return f"book:{d.get('kind')}"
+
+
+def _tensor_consumed(key: str) -> set[str]:
+    """The fields that row consumes into first-class slots; unknown
+    kinds (recorded under ``seam:``/``book:`` intents, never rejected)
+    still consume their identity and time fields."""
+    if key in _TENSOR_FIELDS:
+        return _TENSOR_FIELDS[key]
+    return {"event", "at"} if key.startswith("seam/") else {"kind", "at"}
+
+
 def _book_event(
     filename: str, lineno: int, d: dict[str, Any], owner: str, received_at: float
 ) -> RecordedEvent:
@@ -229,9 +314,9 @@ def _book_event(
     kind = d.get("kind")
     if kind == "ledger":
         side = str(_require(d, "side", where))
-        if side not in ("SEND", "RECEIVE"):
+        if side not in LEDGER_SIDES:
             raise ValueError(f"{where}: unknown ledger side {side!r}")
-        intent = "send" if side == "SEND" else "receive"
+        intent = side.lower()  # send / receive / settle / receive-disputed
         at = float(_require(d, "at", where))
         value = float(d["cost"]) if isinstance(d.get("cost"), (int, float)) else None
         clock = CLOCK_WALL
@@ -240,6 +325,15 @@ def _book_event(
         at = float(_require(d, "taken_at", where))
         value = None  # the reading's value is a dict (or worse); keep it in detail
         clock = CLOCK_MONO  # the reader's monotonic clock — not wall-comparable
+    elif kind == "revision":
+        # v0.3's ex-ante half of the ledger: this book's position on a
+        # contract version. No ``at`` — the record's own time is
+        # ``proposed_at`` (the engine writes it on the wall clock).
+        position = str(_require(d, "position", where))
+        intent = f"revision:{position}"
+        at = float(_require(d, "proposed_at", where))
+        value = None  # the version is a 64-hex hash, not a magnitude
+        clock = CLOCK_WALL
     elif kind == "event":
         intent = f"event:{d.get('event', '?')}"
         at = float(_require(d, "at", where))
@@ -365,6 +459,75 @@ class ImportResult:
     tracks: list[str] = field(default_factory=list)
 
 
+def _versioning_summary(run: RunDirectory) -> dict[str, Any]:
+    """The v0.3 shape of the run, for the recording header's
+    ``versioning`` block:
+
+    - ``seam_citations`` — per contract id, the versions the sources
+      show cited and applied (seam events carry ``cited_version`` /
+      ``applied_version``; ledger entries carry ``contract_version``,
+      the version *that side* applied — on a SEND, the version the
+      sender cites and applies are the same value);
+    - ``revision_records`` — positions booked, counted across both
+      books (the ex-ante half of the ledger);
+    - ``skew_markings`` — superseded-citation and citation-refusal
+      markings, counted where they live (the books' ledger details and
+      the seam's own events are two records of the same skew);
+    - ``detail_only_fields`` — per record kind, the source fields the
+      record form's first-class slots (tick / intent / value) cannot
+      hold. They ride in ``detail`` verbatim; this names them so the
+      recording says what it is not summarising, instead of silently
+      dropping it.
+    """
+    lines = [d for _, d in run.seam_log]
+    for book in (run.sender_book, run.receiver_book):
+        lines.extend(d for _, d in book.lines)
+
+    citations: dict[str, dict[str, set[str]]] = {}
+    positions: dict[str, int] = {}
+    book_skew: dict[str, int] = {}
+    seam_skew: dict[str, int] = {}
+    seen_fields: dict[str, set[str]] = {}
+    for d in lines:
+        key = _tensor_key(d)
+        seen_fields.setdefault(key, set()).update(str(k) for k in d)
+        cid = d.get("contract_id")
+        if cid:
+            slot = citations.setdefault(str(cid), {"cited": set(), "applied": set()})
+            if d.get("cited_version") is not None:
+                slot["cited"].add(str(d["cited_version"]))
+            for f in ("applied_version", "contract_version"):
+                if d.get(f) is not None:
+                    slot["applied"].add(str(d[f]))
+        kind = d.get("kind")
+        if kind == "revision":
+            positions[str(d.get("position"))] = positions.get(str(d.get("position")), 0) + 1
+        elif kind == "ledger":
+            det = d.get("detail") or {}
+            if det.get("superseded_citation"):
+                book_skew["superseded_citation"] = book_skew.get("superseded_citation", 0) + 1
+            if det.get("citation_refusal"):
+                book_skew["citation_refusal"] = book_skew.get("citation_refusal", 0) + 1
+        if d.get("event") in ("superseded_citation", "version_divergence"):
+            ev = str(d["event"])
+            seam_skew[ev] = seam_skew.get(ev, 0) + 1
+    return {
+        "seam_citations": {
+            cid: {"cited": sorted(v["cited"]), "applied": sorted(v["applied"])}
+            for cid, v in sorted(citations.items())
+        },
+        "revision_records": dict(sorted(positions.items())),
+        "skew_markings": {
+            "book_ledger_detail": dict(sorted(book_skew.items())),
+            "seam_events": dict(sorted(seam_skew.items())),
+        },
+        "detail_only_fields": {
+            key: sorted(fields - _tensor_consumed(key))
+            for key, fields in sorted(seen_fields.items())
+        },
+    }
+
+
 def import_run(
     run_dir: str | Path,
     *,
@@ -428,6 +591,7 @@ def import_run(
                 "sender": run.sender_book.owner,
                 "receiver": run.receiver_book.owner,
             },
+            "versioning": _versioning_summary(run),
         },
     )
     return ImportResult(

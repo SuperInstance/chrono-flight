@@ -5,12 +5,21 @@ their kind (Hold / HoldWatch / Act + response), disagreements — with
 kills and truncation gaps rendered as explicit gaps: a side's book
 ending mid-excursion reads as an open excursion, never silently closed.
 
+v0.3 runs also show their contract-versioning story: revision
+**crossings** (a ``contract/revision`` proposal at the seam, the
+citations each crossing carries), **adoption points** (each book's
+``revision`` records — proposed / adopted / refused / withdrawn /
+revoked — on the adopting side's track), and the **skew** events (a
+crossing honoured under a superseded citation; a citation refused with
+a version divergence). All shown as recorded, never re-judged.
+
 Ordering: events on the engine's wall clock merge by tick (ties keep
 arrival order). Book readings are stamped on each reader's *monotonic*
 clock, which is not comparable to wall time; they are shown in their
 own per-track section in book order, never interleaved into the
 wall-clock timeline — clock disagreement stays visible instead of
-being smoothed over.
+being smoothed over. Revision records are stamped ``proposed_at`` on
+the same wall clock and merge into the timeline.
 
 Replay limit: the timeline output carries chrono-flight's standing
 limit in plain words — this replays the record of what happened; the
@@ -31,7 +40,9 @@ from .recording import GAP_OPEN, RecordedEvent
 # monotonic readings are shown only with all_events=True; the recording
 # holds them regardless.
 _DEFAULT_PREFIXES = ("crossing", "decision:", "disagreement", "course_adjusted",
-                     "unreadable_envelope", "seam:", "event:")
+                     "unreadable_envelope", "seam:", "event:",
+                     "revision_received", "superseded_citation",
+                     "version_divergence", "revision:")
 
 
 def _short(tid: Any) -> str:
@@ -71,6 +82,13 @@ def _projection_text(p: Any) -> str:
     return " [projection recorded]"
 
 
+def _version(v: Any) -> str:
+    """A version hash for display, with the honest none-cases named."""
+    if v is None:
+        return "—"
+    return _short(v)
+
+
 def _crossing_text(ev: RecordedEvent) -> str:
     d = ev.detail
     text = f"{_short(d.get('transmission_id'))} {d.get('payload_type', '?')}"
@@ -81,6 +99,72 @@ def _crossing_text(ev: RecordedEvent) -> str:
         facts.append(f"cost {float(d['cost']):.1f}")
     if facts:
         text += f" ({', '.join(facts)})"
+    # v0.3: the citation pair the crossing carried — the version the
+    # sender cited and the version the receiver applied (a superseded
+    # citation is honoured under the cited one; the flag says the
+    # receiver knows it has moved past it).
+    if "cited_version" in d or "applied_version" in d:
+        text += (
+            f" [cites {_version(d.get('cited_version'))}"
+            f" → applied {_version(d.get('applied_version'))}"
+            + ("; superseded citation" if d.get("superseded_citation") else "")
+            + "]"
+        )
+    return text
+
+
+def _revision_received_text(ev: RecordedEvent) -> str:
+    """A revision proposal crossing the seam (the crossing itself; the
+    receiver's position on it is its own book's record)."""
+    d = ev.detail
+    label = f" {d['label']}" if d.get("label") else ""
+    text = (
+        f"proposal {_short(d.get('transmission_id'))}{label}:"
+        f" {_short(d.get('version'))} supersedes {_version(d.get('supersedes'))}"
+        f" — receiver position {d.get('position', '?')}"
+        f" (cites {_version(d.get('cited_version'))}"
+        f" → applied {_version(d.get('applied_version'))}"
+        + (f"; {d['reason']}" if d.get("reason") else "")
+        + ")"
+    )
+    return text
+
+
+def _superseded_citation_text(ev: RecordedEvent) -> str:
+    d = ev.detail
+    return (
+        f"{_short(d.get('transmission_id'))} honoured under cited"
+        f" {_version(d.get('cited_version'))}"
+        f" (receiver current {_version(d.get('receiver_current'))})"
+        " — never re-judged"
+    )
+
+
+def _version_divergence_text(ev: RecordedEvent) -> str:
+    d = ev.detail
+    return (
+        f"{_short(d.get('transmission_id'))} citation refused:"
+        f" {d.get('citation_refusal', '?')}"
+        f" (cites {_version(d.get('cited_version'))},"
+        f" applied {_version(d.get('applied_version'))})"
+    )
+
+
+def _revision_record_text(ev: RecordedEvent) -> str:
+    """A book's own position on a version — the adoption points."""
+    d = ev.detail
+    position = ev.intent.split(":", 1)[1]
+    label = f" {d['label']}" if d.get("label") else ""
+    text = (
+        f"{position}{label}: {_short(d.get('version'))}"
+        f" supersedes {_version(d.get('supersedes'))}"
+    )
+    if d.get("proposed_by"):
+        text += f", by {d['proposed_by']}"
+    if d.get("reason"):
+        text += f" — {d['reason']}"
+    if d.get("related_crossing"):
+        text += f" (crossing {_short(d['related_crossing'])})"
     return text
 
 
@@ -101,11 +185,28 @@ def _disagreement_text(ev: RecordedEvent) -> str:
 
 def _booking_text(ev: RecordedEvent) -> str:
     d = ev.detail
-    arrow = "→" if ev.intent == "send" else "←"
-    return (
-        f"{ev.intent} {_short(d.get('transmission_id'))} {d.get('payload_type', '?')} "
-        f"{arrow} {d.get('peer', '?')}"
-    )
+    arrow = {"send": "→", "receive": "←"}.get(ev.intent)
+    if arrow is not None:
+        text = (
+            f"{ev.intent} {_short(d.get('transmission_id'))} {d.get('payload_type', '?')} "
+            f"{arrow} {d.get('peer', '?')}"
+        )
+    elif ev.intent == "settle":
+        text = (
+            f"settle {_short(d.get('transmission_id'))} {d.get('payload_type', '?')} "
+            f"— settlement stands under the version stamped at booking"
+        )
+    else:  # receive-disputed: the receiver's own measurement is the record
+        det = d.get("detail") if isinstance(d.get("detail"), dict) else {}
+        text = (
+            f"receive-disputed {_short(d.get('transmission_id'))} "
+            f"{d.get('payload_type', '?')} (declared "
+            f"{_short(det.get('declared_hash'))}, computed "
+            f"{_short(d.get('payload_hash'))})"
+        )
+    if d.get("contract_version") is not None:
+        text += f" [under {_short(d.get('contract_version'))}]"
+    return text
 
 
 def _event_text(ev: RecordedEvent) -> str:
@@ -123,6 +224,19 @@ def _event_text(ev: RecordedEvent) -> str:
             extras.append(f"received {len(received)}")
     elif name == "sender_hanging":
         extras.append(f"last send {_short(d.get('last_send'))}")
+    elif name == "adoption_ack_received":
+        # v0.3: the third booking of the adoption cycle landed — only
+        # now does this book adopt (the revision governs when both
+        # books hold it).
+        extras.append(
+            f"version {_short(d.get('version'))} {d.get('position')};"
+            f" sender now on {_short(d.get('sender_now_on'))}"
+        )
+    elif name == "revision_position_booked":
+        extras.append(
+            f"version {_short(d.get('version'))} {d.get('position')};"
+            f" receiver now on {_short(d.get('receiver_now_on'))}"
+        )
     if extras:
         return f"{name} ({'; '.join(extras)})"
     return name
@@ -140,7 +254,16 @@ def _event_line(ev: RecordedEvent) -> str:
         body = f"course adjusted to pick {_short(ev.detail.get('pick'))}"
     elif intent == "unreadable_envelope":
         body = f"unreadable envelope {ev.detail.get('file', '?')}"
-    elif intent in ("send", "receive"):
+    elif intent == "revision_received":
+        body = _revision_received_text(ev)
+    elif intent in ("superseded_citation", "version_divergence"):
+        body = (
+            _superseded_citation_text(ev) if intent == "superseded_citation"
+            else _version_divergence_text(ev)
+        )
+    elif intent.startswith("revision:"):
+        body = _revision_record_text(ev)
+    elif intent in ("send", "receive", "settle", "receive-disputed"):
         body = _booking_text(ev)
     elif intent.startswith("event:"):
         body = _event_text(ev)
@@ -185,6 +308,11 @@ def render_timeline(
             "unreadable_envelope": "unreadable",
             "send": "send",
             "receive": "receive",
+            "settle": "settle",
+            "receive-disputed": "disputed",
+            "revision_received": "revision",
+            "superseded_citation": "skew",
+            "version_divergence": "diverge",
         }.get(ev.intent) or ev.intent.split(":")[0]
         lines.append(
             f"  +{ev.tick - t0:7.3f}s  {ev.track:<12s} {category:<10s} "
@@ -218,6 +346,24 @@ def render_timeline(
     if audit is not None:
         lines.append("")
         lines.append(render_audit(audit))
+
+    versioning = result.header.source.get("versioning") or {}
+    unmapped = {
+        kind: fields
+        for kind, fields in (versioning.get("detail_only_fields") or {}).items()
+        if fields
+    }
+    if unmapped:
+        lines.append("")
+        lines.append(
+            "== v0.3 record kinds — fields the record form cannot hold =="
+        )
+        lines.append(
+            "  (kept verbatim in each event's detail; named here, never"
+            " silently dropped)"
+        )
+        for kind, fields in unmapped.items():
+            lines.append(f"    {kind}: {', '.join(fields)}")
 
     lines.append("")
     lines.append(f"-- {REPLAY_LIMIT}")
